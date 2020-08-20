@@ -15,6 +15,26 @@
 using namespace std;
 using namespace cv;
 
+void RegionCorrect(Rect &region, int image_w, int image_h)
+{
+    if (region.x < 0)
+    {
+        region.x = 0;
+    }
+    if (region.y < 0)
+    {
+        region.y = 0;
+    }
+    if (region.x + region.width > image_w)
+    {
+        region.width = image_w - region.x - 1;
+    }
+    if (region.y + region.height > image_h)
+    {
+        region.height = image_h - region.y - 1;
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2)
@@ -28,7 +48,7 @@ int main(int argc, char **argv)
     string weights = "models/yolov4.weights";
 
     Detector detect_obj(cfg, weights);
-    std::vector<bbox_t> res_vec = detect_obj.detect(image_path, 0.2);
+    std::vector<bbox_t> res_vec = detect_obj.detect(img, 0.4, 1);
     for (int i = 0; i < res_vec.size(); ++i)
     {
         Rect obj_rec;
@@ -36,9 +56,10 @@ int main(int argc, char **argv)
         obj_rec.y = res_vec[i].y;
         obj_rec.width = res_vec[i].w;
         obj_rec.height = res_vec[i].h;
-        rectangle(img,obj_rec,Scalar(0,0,255),2);
+        RegionCorrect(obj_rec, img.cols, img.rows);
+        rectangle(img, obj_rec, Scalar(0, 0, 255), 2);
     }
-    imshow("draw",img);
+    imshow("draw", img);
     waitKey(0);
 
     return 0;

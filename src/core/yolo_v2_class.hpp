@@ -1,8 +1,6 @@
 #ifndef YOLO_V2_CLASS_HPP
 #define YOLO_V2_CLASS_HPP
-
 #define OPENCV
-
 #ifndef LIB_API
 #ifdef LIB_EXPORTS
 #if defined(_MSC_VER)
@@ -21,29 +19,6 @@
 
 #define C_SHARP_MAX_OBJECTS 1000
 
-struct bbox_t
-{
-    unsigned int x, y, w, h;     // (x,y) - top-left corner, (w, h) - width & height of bounded box
-    float prob;                  // confidence - probability that the object was found correctly
-    unsigned int obj_id;         // class of object - from range [0, classes-1]
-    unsigned int track_id;       // tracking id for video (0 - untracked, 1 - inf - tracked object)
-    unsigned int frames_counter; // counter of frames on which the object was detected
-    float x_3d, y_3d, z_3d;      // center of object (in Meters) if ZED 3D Camera is used
-};
-
-struct image_t
-{
-    int h;       // height
-    int w;       // width
-    int c;       // number of chanels (3 - for RGB)
-    float *data; // pointer to the image data
-};
-
-struct bbox_t_container
-{
-    bbox_t candidates[C_SHARP_MAX_OBJECTS];
-};
-
 #ifdef __cplusplus
 #include <memory>
 #include <vector>
@@ -60,6 +35,30 @@ struct bbox_t_container
 #include <opencv2/highgui/highgui_c.h> // C
 #include <opencv2/imgproc/imgproc_c.h> // C
 #endif
+
+struct bbox_t
+{
+    unsigned int x, y, w, h;     // (x,y) - top-left corner, (w, h) - width & height of bounded box
+    float prob;                  // confidence - probability that the object was found correctly
+    unsigned int obj_id;         // class of object - from range [0, classes-1]
+    unsigned int track_id;       // tracking id for video (0 - untracked, 1 - inf - tracked object)
+    unsigned int frames_counter; // counter of frames on which the object was detected
+    float x_3d, y_3d, z_3d;      // center of object (in Meters) if ZED 3D Camera is used
+    cv::Rect rc;
+};
+
+struct image_t
+{
+    int h;       // height
+    int w;       // width
+    int c;       // number of chanels (3 - for RGB)
+    float *data; // pointer to the image data
+};
+
+struct bbox_t_container
+{
+    bbox_t candidates[C_SHARP_MAX_OBJECTS];
+};
 
 extern "C" LIB_API int init(const char *configurationFilename, const char *weightsFilename, int gpu);
 extern "C" LIB_API int detect_image(const char *filename, bbox_t_container &container);
@@ -102,38 +101,120 @@ public:
     //LIB_API bool send_json_http(std::vector<bbox_t> cur_bbox_vec, std::vector<std::string> obj_names, int frame_id,
     //    std::string filename = std::string(), int timeout = 400000, int port = 8070);
 
-    std::vector<bbox_t> detect_resized(image_t img, int init_w, int init_h, float thresh = 0.2, bool use_mean = false)
+    std::vector<bbox_t> detect_resized(image_t img, int init_w, int init_h, float thresh = 0.2, int letter_box = 0, bool use_mean = false)
     {
         if (img.data == NULL)
             throw std::runtime_error("Image is empty");
         auto detection_boxes = detect(img, thresh, use_mean);
-        float wk = (float)init_w / img.w, hk = (float)init_h / img.h;
-        for (auto &i : detection_boxes)
-            i.x *= wk, i.w *= wk, i.y *= hk, i.h *= hk;
+        std::cout << "detection boxes size :" << detection_boxes.size() << std::endl;
+        if (letter_box == 0)
+        {
+            float wk = (float)init_w / img.w, hk = (float)init_h / img.h;
+            for (auto &i : detection_boxes)
+            {
+                i.x *= wk, i.w *= wk, i.y *= hk, i.h *= hk;
+            }
+        }
+        else
+        {
+            if (init_w > init_h)
+            {
+                float scale = init_w * 1.0 / img.w;
+                int new_image_h = int(init_h / scale);
+                int half_border = (img.h - new_image_h) / 2;
+                for (auto &i : detection_boxes)
+                {
+                    i.y = i.y - half_border;
+                    i.y = int(i.y * scale);
+                    i.x = int(i.x * scale);
+                    i.w = int(i.w * scale);
+                    i.h = int(i.h * scale);
+                }
+            }
+            else
+            {
+                float scale = init_h * 1.0 / img.h;
+                int new_image_w = int(init_w / scale);
+                int half_border = (img.w - new_image_w) / 2;
+                for (auto &i : detection_boxes)
+                {
+                    i.x = i.x - half_border;
+                    i.y = int(i.y * scale);
+                    i.x = int(i.x * scale);
+                    i.w = int(i.w * scale);
+                    i.h = int(i.h * scale);
+                }
+            }
+        }
+
         return detection_boxes;
     }
 
 #ifdef OPENCV
-    std::vector<bbox_t> detect(cv::Mat mat, float thresh = 0.2, bool use_mean = false)
+    std::vector<bbox_t> detect(cv::Mat mat, float thresh = 0.2, int letter_box = 0, bool use_mean = false)
     {
         if (mat.data == NULL)
             throw std::runtime_error("Image is empty");
-        auto image_ptr = mat_to_image_resize(mat);
-        return detect_resized(*image_ptr, mat.cols, mat.rows, thresh, use_mean);
+        auto image_ptr = mat_to_image_resize(mat, letter_box);
+        return detect_resized(*image_ptr, mat.cols, mat.rows, thresh, letter_box, use_mean);
     }
 
-    std::shared_ptr<image_t> mat_to_image_resize(cv::Mat mat) const
+    std::shared_ptr<image_t> mat_to_image_resize(cv::Mat mat, int letter_box) const
     {
         if (mat.data == NULL)
             return std::shared_ptr<image_t>(NULL);
-
         cv::Size network_size = cv::Size(get_net_width(), get_net_height());
         cv::Mat det_mat;
-        if (mat.size() != network_size)
-            cv::resize(mat, det_mat, network_size);
+        if (letter_box == 0)
+        {
+            if (mat.size() != network_size)
+                cv::resize(mat, det_mat, network_size);
+            else
+                det_mat = mat; // only reference is copied
+        }
         else
-            det_mat = mat; // only reference is copied
+        {
+            if (mat.size() != network_size)
+            {
+                int net_w = get_net_width();
+                int net_h = get_net_height();
+                cv::Mat resize_mat(net_h, net_w, CV_8UC3);
+                int image_w = mat.cols;
+                int image_h = mat.rows;
+                cv::Mat temp_mat;
 
+                //judge size
+                int top, bottom, left, right;
+                if (image_w > image_h)
+                {
+                    float scale = image_w * 1.0 / net_w;
+                    int new_image_h = int(image_h / scale);
+                    int half_border = (net_h - new_image_h) / 2;
+                    top = half_border;
+                    bottom = net_h - new_image_h - half_border;
+                    left = 0;
+                    right = 0;
+                    cv::resize(mat, temp_mat, cv::Size(net_w, new_image_h));
+                }
+                else
+                {
+                    float scale = image_h * 1.0 / net_h;
+                    int new_image_w = int(image_w / scale);
+                    int half_border = (net_w - new_image_w) / 2;
+                    top = 0;
+                    bottom = 0;
+                    left = half_border;
+                    right = net_w - new_image_w - half_border;
+                    cv::resize(mat, temp_mat, cv::Size(new_image_w, net_h));
+                }
+                cv::copyMakeBorder(temp_mat, resize_mat, top, bottom, left, right, cv::BORDER_CONSTANT, cv::Scalar(114, 114, 114));
+                det_mat = resize_mat;
+            }
+            else
+            {
+                det_mat = mat;
+            }
+        }
         return mat_to_image(det_mat);
     }
 
