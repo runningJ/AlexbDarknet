@@ -78,6 +78,7 @@ class Detector
     std::string _cfg_filename, _weight_filename;
 
 public:
+    int letter_box = 0;
     const int cur_gpu_id;
     float nms = .4;
     bool wait_stream;
@@ -106,7 +107,6 @@ public:
         if (img.data == NULL)
             throw std::runtime_error("Image is empty");
         auto detection_boxes = detect(img, thresh, use_mean);
-        std::cout << "detection boxes size :" << detection_boxes.size() << std::endl;
         if (letter_box == 0)
         {
             float wk = (float)init_w / img.w, hk = (float)init_h / img.h;
@@ -124,7 +124,15 @@ public:
                 int half_border = (img.h - new_image_h) / 2;
                 for (auto &i : detection_boxes)
                 {
-                    i.y = i.y - half_border;
+
+                    if (i.y < half_border)
+                    {
+                        i.y = 0;
+                    }
+                    else
+                    {
+                        i.y = i.y - half_border;
+                    }
                     i.y = int(i.y * scale);
                     i.x = int(i.x * scale);
                     i.w = int(i.w * scale);
@@ -138,7 +146,14 @@ public:
                 int half_border = (img.w - new_image_w) / 2;
                 for (auto &i : detection_boxes)
                 {
-                    i.x = i.x - half_border;
+                    if (i.x < half_border)
+                    {
+                        i.x = 0;
+                    }
+                    else
+                    {
+                        i.x = i.x - half_border;
+                    }
                     i.y = int(i.y * scale);
                     i.x = int(i.x * scale);
                     i.w = int(i.w * scale);
@@ -156,7 +171,15 @@ public:
         if (mat.data == NULL)
             throw std::runtime_error("Image is empty");
         auto image_ptr = mat_to_image_resize(mat, letter_box);
-        return detect_resized(*image_ptr, mat.cols, mat.rows, thresh, letter_box, use_mean);
+        std::vector<bbox_t> detect_res = detect_resized(*image_ptr, mat.cols, mat.rows, thresh, letter_box, use_mean);
+        for (int i = 0; i < detect_res.size(); ++i)
+        {
+            detect_res[i].rc.x = detect_res[i].x;
+            detect_res[i].rc.y = detect_res[i].y;
+            detect_res[i].rc.width = detect_res[i].w;
+            detect_res[i].rc.height = detect_res[i].h;
+        }
+        return detect_res;
     }
 
     std::shared_ptr<image_t> mat_to_image_resize(cv::Mat mat, int letter_box) const
@@ -215,6 +238,7 @@ public:
                 det_mat = mat;
             }
         }
+
         return mat_to_image(det_mat);
     }
 

@@ -48,6 +48,8 @@ int main(int argc, char **argv)
     string weights = "models/yolov4.weights";
 
     Detector detect_obj(cfg, weights);
+    int letter_box = detect_obj.letter_box;
+    cout << "letter box value is "<< letter_box<<endl;
     std::vector<bbox_t> res_vec = detect_obj.detect(img, 0.4, 1);
     for (int i = 0; i < res_vec.size(); ++i)
     {
@@ -57,7 +59,7 @@ int main(int argc, char **argv)
         obj_rec.width = res_vec[i].w;
         obj_rec.height = res_vec[i].h;
         RegionCorrect(obj_rec, img.cols, img.rows);
-        rectangle(img, obj_rec, Scalar(0, 0, 255), 2);
+        rectangle(img, obj_rec, Scalar(0, 255, 255), 2);
     }
     imshow("draw", img);
     waitKey(0);
